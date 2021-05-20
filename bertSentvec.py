@@ -886,8 +886,8 @@ def main(_):
     # FLAGS.vocab_file = "/search/odin/guobk/vpa/roberta_zh/model/roberta_zh_l12/vocab.txt"
     # FLAGS.init_checkpoint = "/search/odin/guobk/vpa/roberta_zh/model/roberta_zh_l12/bert_model.ckpt"
     label_lists = ['0','1']
-    tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
-                                                  FLAGS.init_checkpoint)
+    # tokenization.validate_case_matches_checkpoint(FLAGS.do_lower_case,
+    #                                               FLAGS.init_checkpoint)
 
     if not FLAGS.do_train and not FLAGS.do_eval and not FLAGS.do_predict:
         raise ValueError(
