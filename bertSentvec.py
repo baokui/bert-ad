@@ -722,66 +722,72 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
         tower_grads = []
         train_perplexity = 0
         for index in range(num_gpus):
-            with tf.name_scope('replica_%d' % index):
-                with tf.device('/gpu:%d' % index):
-                    input_ids, input_mask, segment_ids,label_ids = input_ids_list[index], input_mask_list[index], segment_ids_list[index], label_ids_list[index]
-                    (total_loss,score,per_example_loss,feature_qr,feature_dc,feature0,feature1) = create_model(bert_config, is_training, input_ids, input_mask, segment_ids,label_ids, use_one_hot_embeddings)
-                    tvars = tf.trainable_variables()
-
-                    scaffold_fn = None
-                    if init_checkpoint:
-                        (assignment_map,
-                            initialized_variable_names) = modeling.get_assigment_map_from_checkpoint(
-                                tvars, init_checkpoint)
-                        for var in tvars:
-                            param_name = var.name[:-2]
-                            tf.get_variable(
-                                name=param_name + "/adam_m",
-                                shape=var.shape.as_list(),
-                                dtype=tf.float32,
-                                trainable=False,
-                                initializer=tf.zeros_initializer())
-                            tf.get_variable(
-                                name=param_name + "/adam_v",
-                                shape=var.shape.as_list(),
-                                dtype=tf.float32,
-                                trainable=False,
-                                initializer=tf.zeros_initializer())
-                        tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
-
-                    tf.logging.info("**** Trainable Variables ****")
-                    tf.logging.info('device: %d init' % index)
-                    if index == 0:
-                        for var in tvars:
-                            init_string = ""
-                            if var.name in initialized_variable_names:
-                                init_string = ", *INIT_FROM_CKPT*"
-                            tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
-                                            init_string)
-                    if is_training:
-                        # reuse variables
-                        tf.get_variable_scope().reuse_variables()
-                        loss = total_loss
-                        # get gradients
-                        update_var_list = []  #该list中的变量参与参数更新
+            with tf.device('/gpu:%d' % index):
+                print('TEST-tower:%d...'% index)
+                with tf.name_scope('replica_%d' % index):
+                    with tf.variable_scope('cpu_variables', reuse=index>0):
+                        input_ids, input_mask, segment_ids,label_ids = input_ids_list[index], input_mask_list[index], segment_ids_list[index], label_ids_list[index]
+                        (total_loss,score,per_example_loss,feature_qr,feature_dc,feature0,feature1) = create_model(bert_config, is_training, input_ids, input_mask, segment_ids,label_ids, use_one_hot_embeddings)
                         tvars = tf.trainable_variables()
-                        num_params = np.sum([np.prod(v.get_shape().as_list()) for v in tvars])
-                        print('TEST-trainable vars before frozen:',tvars)
-                        print('TEST-trainable number params of vars before frozen:',num_params)
-                        for tvar in tvars:
-                            if "bert" not in tvar.name or 'layer_11' in tvar.name:
-                                update_var_list.append(tvar)
-                        print('TEST-trainable vars after frozen:',update_var_list)
-                        num_params = np.sum([np.prod(v.get_shape().as_list()) for v in update_var_list])
-                        print('TEST-trainable number params of vars after frozen:',num_params)    
-                        grads = optimizer.compute_gradients(
-                        loss,
-                        aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE,
-                        var_list = update_var_list
-                        )
-                        tower_grads.append(grads)
-                        # keep track of loss across all GPUs
-                        train_perplexity += loss
+
+                        scaffold_fn = None
+                        if init_checkpoint:
+                            (assignment_map,initialized_variable_names) = modeling.get_assigment_map_from_checkpoint(
+                                    tvars, init_checkpoint)
+                            print('TEST:assignment_map0',assignment_map)
+                            if len(assignment_map)==0:
+                                (assignment_map, initialized_variable_names, vars_others
+                                ) = get_assignment_map_from_checkpoint(tvars, init_checkpoint)
+                                print("TEST:assignment_map", assignment_map)
+                            for var in tvars:
+                                param_name = var.name[:-2]
+                                tf.get_variable(
+                                    name=param_name + "/adam_m",
+                                    shape=var.shape.as_list(),
+                                    dtype=tf.float32,
+                                    trainable=False,
+                                    initializer=tf.zeros_initializer())
+                                tf.get_variable(
+                                    name=param_name + "/adam_v",
+                                    shape=var.shape.as_list(),
+                                    dtype=tf.float32,
+                                    trainable=False,
+                                    initializer=tf.zeros_initializer())
+                            tf.train.init_from_checkpoint(init_checkpoint, assignment_map)
+
+                        tf.logging.info("**** Trainable Variables ****")
+                        tf.logging.info('device: %d init' % index)
+                        if index == 0:
+                            for var in tvars:
+                                init_string = ""
+                                if var.name in initialized_variable_names:
+                                    init_string = ", *INIT_FROM_CKPT*"
+                                tf.logging.info("  name = %s, shape = %s%s", var.name, var.shape,
+                                                init_string)
+                        if is_training:
+                            # reuse variables
+                            tf.get_variable_scope().reuse_variables()
+                            loss = total_loss
+                            # get gradients
+                            update_var_list = []  #该list中的变量参与参数更新
+                            tvars = tf.trainable_variables()
+                            num_params = np.sum([np.prod(v.get_shape().as_list()) for v in tvars])
+                            print('TEST-trainable vars before frozen:',tvars)
+                            print('TEST-trainable number params of vars before frozen:',num_params)
+                            for tvar in tvars:
+                                if "bert" not in tvar.name or 'layer_11' in tvar.name:
+                                    update_var_list.append(tvar)
+                            print('TEST-trainable vars after frozen:',update_var_list)
+                            num_params = np.sum([np.prod(v.get_shape().as_list()) for v in update_var_list])
+                            print('TEST-trainable number params of vars after frozen:',num_params)    
+                            grads = optimizer.compute_gradients(
+                            loss,
+                            aggregation_method=tf.AggregationMethod.EXPERIMENTAL_TREE,
+                            var_list = update_var_list
+                            )
+                            tower_grads.append(grads)
+                            # keep track of loss across all GPUs
+                            train_perplexity += loss
         
         if mode == tf.estimator.ModeKeys.TRAIN:
             global_step = tf.train.get_or_create_global_step()
