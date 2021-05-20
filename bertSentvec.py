@@ -935,6 +935,7 @@ def main(_):
     print('Data processing')
     num_train_steps = int(FLAGS.number_examples / FLAGS.train_batch_size * FLAGS.num_train_epochs)
     num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
+    print("TEST:steps",FLAGS.number_examples,FLAGS.train_batch_size,FLAGS.num_train_epochs)
     # if FLAGS.do_train:
     #     tf.logging.info("***** Data processing *****")
     #     train_examples = processor.get_train_examples(FLAGS.data_dir)
