@@ -1045,6 +1045,99 @@ def main(_):
             drop_remainder=True
         )
         estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
+
+def sentEmb(D,mode='qr',batch_size=32,vocab_file = '',bert_config_file = '',file_checkpoint='',initial_checkpoint=None,init_checkpoint_bert = None):
+    tf.reset_default_graph()
+    label_lists = ['0', '1']
+    tokenizer = tokenization.FullTokenizer(vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case, max_seq_length = 128)
+    bert_config = modeling.BertConfig.from_json_file(bert_config_file)
+    is_training = False
+    input_ids = [tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_idsA'),tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_idsB')]
+    input_mask = [tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_maskA'),tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_maskB')]
+    segment_ids = tf.placeholder(tf.int32, shape=[None, max_seq_length], name='segment_ids')
+    labels = tf.placeholder(tf.int32, shape=[None, ], name='labels')
+    loss,score,per_example_loss,feature_qr,feature_dc,feature0,feature1 = create_model(bert_config, is_training, input_ids, input_mask, segment_ids,labels, use_one_hot_embeddings=False)
+    sess = tf.Session()
+    saver = tf.train.Saver()
+    if initial_checkpoint:
+        model_file = initial_checkpoint
+    else:
+        model_file = tf.train.latest_checkpoint(file_checkpoint)
+    if model_file:
+        print('load model from checkpoint')
+        sess.run(tf.global_variables_initializer())
+        saver.restore(sess, model_file)
+    else:
+        print('load model from bert init')
+        tvars = tf.trainable_variables()
+        (assignment_map, initialized_variable_names, vars_others
+         ) = get_assignment_map_from_checkpoint(tvars, init_checkpoint_bert)
+        tf.train.init_from_checkpoint(init_checkpoint_bert, assignment_map)
+        sess.run(tf.global_variables_initializer())
+    f0 = feature0 if init=='bert' else feature_qr
+    f1 = feature1 if init=='bert' else feature_dc
+    sent2vec = f0 if mode=='qr' else f1
+    Y_dc = []
+    i0 = []
+    i1 = []
+    seg = []
+    m0 = []
+    m1 = []
+    for i in range(len(D)):
+        if mode=='qr':
+            text_b = '我'
+            text_a = D[i]
+        else:
+            text_a = '我'
+            text_b = D[i]
+        example = InputExample(guid='guid', text_a=text_a, text_b=text_b, label='0')
+        feature = convert_single_example(10, example, label_lists, max_seq_length, tokenizer)
+        i0.append(feature.input_ids[0])
+        i1.append(feature.input_ids[1])
+        seg.append(feature.segment_ids)
+        m0.append(feature.input_mask[0])
+        m1.append(feature.input_mask[1])
+        if len(i0)>=batch_size:
+            feed_dict = {input_ids[0]: i0,
+                         input_ids[1]: i1,
+                         segment_ids: seg,
+                         input_mask[0]: m0,
+                         input_mask[1]: m1}
+            y_dc = sess.run(sent2vec, feed_dict=feed_dict)
+            Y_dc.extend(y_dc)
+            i0 = []
+            i1 = []
+            seg = []
+            m0 = []
+            m1 = []
+        if i % 100 == 0:
+            print(i, len(D))
+    if len(i0)>0:
+        feed_dict = {input_ids[0]: i0,
+                         input_ids[1]: i1,
+                         segment_ids: seg,
+                         input_mask[0]: m0,
+                         input_mask[1]: m1}
+        y_dc = sess.run(sent2vec, feed_dict=feed_dict)
+        Y_dc.extend(y_dc)
+    return Y_dc
+def test():
+    batch_size=32
+    vocab_file="/search/odin/guobk/data/model/roberta_zh_l12/vocab.txt"
+    bert_config_file="/search/odin/guobk/data/model/roberta_zh_l12/bert_config.json"
+    file_checkpoint='/search/odin/guobk/data/bert_semantic/model6/'
+    initial_checkpoint=None
+    path_data = "/search/odin/guobk/data/bert_semantic/finetuneData_new/test.txt"
+    with open(path_data,'r') as f:
+        S = f.read().strip().split('\n')
+    S = [t.split('\t') for t in S]
+    D = list(set([s[1] for s in S]))
+    Q = list(set([s[0] for s in S]))
+    vec_doc = sentEmb(D,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
+    vec_qr = sentEmb(Q,mode='qr',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
+
+
+
 if __name__ == "__main__":
   flags.mark_flag_as_required("data_dir")
   flags.mark_flag_as_required("task_name")
