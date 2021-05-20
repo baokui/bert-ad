@@ -594,7 +594,7 @@ def file_based_input_fn_builder(input_files, seq_length, batch_size, is_training
     def input_fn(params):
         """The actual input function."""
         num_cpu_threads = 4
-        batch_size = params["batch_size"]
+        # batch_size = params["batch_size"]
         d = tf.data.Dataset.from_tensor_slices(tf.constant(input_files))
         d = d.repeat()
         d = d.shuffle(buffer_size=len(input_files))
@@ -712,11 +712,11 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
             optimizer = optimization.create_optimizer_mgpu(learning_rate, num_train_steps, num_warmup_steps)
         else:
             num_gpus=1
-        print(features)
-        input_ids_list = [tf.split(features["input_idsA"], num_or_size_splits=num_gpus, axis=0)]
-        input_ids_list += [tf.split(features["input_idsB"], num_or_size_splits=num_gpus, axis=0)]
-        input_mask_list = [tf.split(features["input_maskA"], num_or_size_splits=num_gpus, axis=0)]
-        input_mask_list += [tf.split(features["input_maskB"], num_or_size_splits=num_gpus, axis=0)]
+        print('TEST-features:',features)
+        input_ids_listA = tf.split(features["input_idsA"], num_or_size_splits=num_gpus, axis=0)
+        input_ids_listB = tf.split(features["input_idsB"], num_or_size_splits=num_gpus, axis=0)
+        input_mask_listA = tf.split(features["input_maskA"], num_or_size_splits=num_gpus, axis=0)
+        input_mask_listB = tf.split(features["input_maskB"], num_or_size_splits=num_gpus, axis=0)
         segment_ids_list = tf.split(features["segment_ids"], num_or_size_splits=num_gpus, axis=0)
         label_ids_list = tf.split(features["label_ids"], num_or_size_splits=num_gpus, axis=0)
         tower_grads = []
@@ -726,7 +726,7 @@ def model_fn_builder(bert_config, init_checkpoint, learning_rate,
                 print('TEST-tower:%d...'% index)
                 with tf.name_scope('replica_%d' % index):
                     with tf.variable_scope('cpu_variables', reuse=index>0):
-                        input_ids, input_mask, segment_ids,label_ids = input_ids_list[index], input_mask_list[index], segment_ids_list[index], label_ids_list[index]
+                        input_ids, input_mask, segment_ids,label_ids = [input_ids_listA[index],input_ids_listB[index]], [input_mask_listA[index],input_mask_listB[index]], segment_ids_list[index], label_ids_list[index]
                         (total_loss,score,per_example_loss,feature_qr,feature_dc,feature0,feature1) = create_model(bert_config, is_training, input_ids, input_mask, segment_ids,label_ids, use_one_hot_embeddings)
                         tvars = tf.trainable_variables()
 
