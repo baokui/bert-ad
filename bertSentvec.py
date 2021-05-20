@@ -28,7 +28,7 @@ import tensorflow as tf
 import json
 import numpy as np
 import sys
-
+from run_classifier_mgpu import average_gradients
 flags = tf.flags
 
 FLAGS = flags.FLAGS
