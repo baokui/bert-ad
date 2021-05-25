@@ -1147,55 +1147,37 @@ def auc_calculate(labels,preds,n_bins=100):
         accumulated_neg += neg_histogram[i]
     return satisfied_pair / float(total_case)
 
-def test():
+def test(vocab_file,bert_config_file,file_checkpoint,path_data,path_target,modeltag,maxSample=1000,minSim=0.85,maxRecall=20):
     batch_size=32
-    vocab_file="/search/odin/guobk/data/model/roberta_zh_l12/vocab.txt"
-    bert_config_file="/search/odin/guobk/data/model/roberta_zh_l12/bert_config.json"
-    file_checkpoint='/search/odin/guobk/data/bert_semantic/model6/'
+    # vocab_file="/search/odin/guobk/data/model/roberta_zh_l12/vocab.txt"
+    # bert_config_file="/search/odin/guobk/data/model/roberta_zh_l12/bert_config.json"
+    # file_checkpoint='/search/odin/guobk/data/bert_semantic/model6/'
     initial_checkpoint=None
     max_seq_length=128
-    path_data = "/search/odin/guobk/data/bert_semantic/finetuneData_new_test/test.txt"
-    with open(path_data,'r') as f:
-        S = f.read().strip().split('\n')
-    S = [t.split('\t') for t in S]
-    D = list(set([s[1] for s in S]))
-    Q = list(set([s[0] for s in S]))
+    with open(os.path.join(path_data,'Docs.json'),'r') as f:
+        Docs = json.load(f)
+    with open(os.path.join(path_data,'Queries.json'),'r') as f:
+        Queries = json.load(f)
+    #S = [t.split('\t') for t in S]
+    D = [Docs[i]['content'] for i in range(len(Docs))]
+    Q = [Queries[i]['content'] for i in range(len(Queries))]
     vec_doc = sentEmb(D,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
     vec_qr = sentEmb(Q,mode='qr',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
-    Labels = [int(S[i][2]) for i in range(len(S))]
-    for i in range(len(S)):
-        vq = vec_qr[Q.index(S[i][0])]
-        vd = vec_doc[D.index(S[i][1])]
-        score = vq.dot(vd)
-        S[i].append(score)
-        if i%1000==0:
-            pred = [S[k][-1]/2+0.5 for k in range(i)]
-            auc = auc_calculate(labels=Labels[:i], preds=pred)
-            print(i,len(S),auc)
-    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Docs.json','r') as f:
-        Docs = json.load(f)
-    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Queries-142000.json','r') as f:
-        Queries = json.load(f)
-    D_V = {D[i]:vec_doc[i] for i in range(len(D))}
-    S0 = [Docs[k]['content'] for k in range(len(Docs)) if Docs[k]['content'] not in D_V]
-    VS0 = sentEmb(S0,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
-    for i in range(len(S0)):
-        D_V[S0[i]] = VS0[i]
-    for i in range(len(Docs)):
-        Docs[i]['sent2vec'] = list(D_V[Docs[i]['content']])
-    Q_V = {Q[k]:vec_qr[k] for k in range(len(Q))}
-    for i in range(len(Queries)):
-        Queries[i]['sent2vec'] = list(Q_V[Queries[i]['content']])
-    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Docs-667000.json','w') as f:
-        json.dump(Docs,f,ensure_ascii=False,indent=4)
-    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Queries-667000.json','w') as f:
-        json.dump(Queries,f,ensure_ascii=False,indent=4)
+    R = []
+    for i in range(maxSample):
+        s = vec_qr.dot(vec_qr[i])
+        idx = np.argsort(-s)
+        rec = [D[j]+'\t%0.4f'%s[j] for j in idx[:maxRecall] if s[j]>=minSim]
+        d = Q[i]
+        d['rec_'+modeltag] = rec
+        R.append(d)
+    with open(path_target,'w') as f:
+        json.dump(R,f,ensure_ascii=False,indent=4)
 
 
 if __name__ == "__main__":
-  flags.mark_flag_as_required("data_dir")
-  flags.mark_flag_as_required("task_name")
-  flags.mark_flag_as_required("vocab_file")
-  flags.mark_flag_as_required("bert_config_file")
-  flags.mark_flag_as_required("output_dir")
-  tf.app.run()
+    vocab_file,bert_config_file,file_checkpoint,path_data,path_target,modeltag,maxSample,minSim,maxRecall = sys.argv[1:]
+    maxSample = int(maxSample)
+    minSim = float(minSim)
+    maxRecall = int(maxRecall)
+    test(vocab_file,bert_config_file,file_checkpoint,path_data,path_target,modeltag,maxSample,minSim,maxRecall)
