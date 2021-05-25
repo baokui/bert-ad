@@ -1045,25 +1045,30 @@ def main(_):
             drop_remainder=True
         )
         estimator.train(input_fn=train_input_fn, max_steps=num_train_steps)
-
-def sentEmb(D,mode='qr',batch_size=32,vocab_file = '',bert_config_file = '',file_checkpoint='',initial_checkpoint=None,init_checkpoint_bert = None):
+from sklearn import preprocessing
+def norm(V1):
+    V1 = preprocessing.scale(V1, axis=-1)
+    V1 = V1 / np.sqrt(len(V1[0]))
+    return V1
+def sentEmb(D,mode='qr',batch_size=32,vocab_file = '',bert_config_file = '',max_seq_length=128,file_checkpoint='',initial_checkpoint=None,init_checkpoint_bert = None, init='trained'):
     tf.reset_default_graph()
     label_lists = ['0', '1']
-    tokenizer = tokenization.FullTokenizer(vocab_file=FLAGS.vocab_file, do_lower_case=FLAGS.do_lower_case, max_seq_length = 128)
+    tokenizer = tokenization.FullTokenizer(vocab_file=vocab_file, do_lower_case=FLAGS.do_lower_case)
     bert_config = modeling.BertConfig.from_json_file(bert_config_file)
     is_training = False
     input_ids = [tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_idsA'),tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_idsB')]
     input_mask = [tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_maskA'),tf.placeholder(tf.int32, shape=[None, max_seq_length], name='input_maskB')]
     segment_ids = tf.placeholder(tf.int32, shape=[None, max_seq_length], name='segment_ids')
     labels = tf.placeholder(tf.int32, shape=[None, ], name='labels')
-    loss,score,per_example_loss,feature_qr,feature_dc,feature0,feature1 = create_model(bert_config, is_training, input_ids, input_mask, segment_ids,labels, use_one_hot_embeddings=False)
+    with tf.variable_scope('cpu_variables'):
+        loss,score,per_example_loss,feature_qr,feature_dc,feature0,feature1 = create_model(bert_config, is_training, input_ids, input_mask, segment_ids,labels, use_one_hot_embeddings=False)
     sess = tf.Session()
     saver = tf.train.Saver()
     if initial_checkpoint:
         model_file = initial_checkpoint
     else:
         model_file = tf.train.latest_checkpoint(file_checkpoint)
-    if model_file:
+    if model_file and init!='bert':
         print('load model from checkpoint')
         sess.run(tf.global_variables_initializer())
         saver.restore(sess, model_file)
@@ -1120,22 +1125,71 @@ def sentEmb(D,mode='qr',batch_size=32,vocab_file = '',bert_config_file = '',file
                          input_mask[1]: m1}
         y_dc = sess.run(sent2vec, feed_dict=feed_dict)
         Y_dc.extend(y_dc)
+    Y_dc = norm(Y_dc)
     return Y_dc
+def auc_calculate(labels,preds,n_bins=100):
+    postive_len = sum(labels)
+    negative_len = len(labels) - postive_len
+    total_case = postive_len * negative_len
+    pos_histogram = [0 for _ in range(n_bins)]
+    neg_histogram = [0 for _ in range(n_bins)]
+    bin_width = 1.0 / n_bins
+    for i in range(len(labels)):
+        nth_bin = int(preds[i]/bin_width)
+        if labels[i]==1:
+            pos_histogram[nth_bin] += 1
+        else:
+            neg_histogram[nth_bin] += 1
+    accumulated_neg = 0
+    satisfied_pair = 0
+    for i in range(n_bins):
+        satisfied_pair += (pos_histogram[i]*accumulated_neg + pos_histogram[i]*neg_histogram[i]*0.5)
+        accumulated_neg += neg_histogram[i]
+    return satisfied_pair / float(total_case)
+
 def test():
     batch_size=32
     vocab_file="/search/odin/guobk/data/model/roberta_zh_l12/vocab.txt"
     bert_config_file="/search/odin/guobk/data/model/roberta_zh_l12/bert_config.json"
     file_checkpoint='/search/odin/guobk/data/bert_semantic/model6/'
     initial_checkpoint=None
-    path_data = "/search/odin/guobk/data/bert_semantic/finetuneData_new/test.txt"
+    max_seq_length=128
+    path_data = "/search/odin/guobk/data/bert_semantic/finetuneData_new_test/test.txt"
     with open(path_data,'r') as f:
         S = f.read().strip().split('\n')
     S = [t.split('\t') for t in S]
     D = list(set([s[1] for s in S]))
     Q = list(set([s[0] for s in S]))
-    vec_doc = sentEmb(D,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
-    vec_qr = sentEmb(Q,mode='qr',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
-
+    vec_doc = sentEmb(D,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
+    vec_qr = sentEmb(Q,mode='qr',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
+    Labels = [int(S[i][2]) for i in range(len(S))]
+    for i in range(124845,len(S)):
+        vq = vec_qr[Q.index(S[i][0])]
+        vd = vec_doc[D.index(S[i][1])]
+        score = vq.dot(vd)
+        S[i].append(score)
+        if i%1000==0:
+            pred = [S[k][-1]/2+0.5 for k in range(i)]
+            auc = auc_calculate(labels=Labels[:i], preds=pred)
+            print(i,len(S),auc)
+    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Docs.json','r') as f:
+        Docs = json.load(f)
+    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Queries.json','r') as f:
+        Queries = json.load(f)
+    D_V = {D[i]:vec_doc[i] for i in range(len(D))}
+    S0 = [Docs[k]['content'] for k in range(len(Docs)) if Docs[k]['content'] not in D_V]
+    VS0 = sentEmb(S0,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
+    for i in range(len(S0)):
+        D_V[S0[i]] = VS0[i]
+    for i in range(len(Docs)):
+        Docs[i]['sent2vec'] = list(D_V[Docs[i]['content']])
+    Q_V = {Q[k]:vec_qr[k] for k in range(len(Q))}
+    for i in range(len(Queries)):
+        Queries[i]['sent2vec'] = list(Q_V[Queries[i]['content']])
+    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Docs.json','w') as f:
+        json.dump(Docs,f,ensure_ascii=False,indent=4)
+    with open('/search/odin/guobk/data/bert_semantic/finetuneData_new_test/Queries.json','w') as f:
+        json.dump(Queries,f,ensure_ascii=False,indent=4)
 
 
 if __name__ == "__main__":
