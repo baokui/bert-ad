@@ -1168,7 +1168,7 @@ def test(vocab_file,bert_config_file,file_checkpoint,path_data,path_target,model
         s = vec_qr.dot(vec_qr[i])
         idx = np.argsort(-s)
         rec = [D[j]+'\t%0.4f'%s[j] for j in idx[:maxRecall] if s[j]>=minSim]
-        d = Q[i]
+        d = Queries[i]
         d['rec_'+modeltag] = rec
         R.append(d)
     with open(path_target,'w') as f:

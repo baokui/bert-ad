@@ -995,7 +995,7 @@ def main(_):
     num_train_steps = None
     num_warmup_steps = None
     print('Data processing')
-    num_train_steps = int(FLAGS.number_examples / FLAGS.train_batch_size * FLAGS.num_train_epochs)
+    num_train_steps = int(FLAGS.number_examples / (FLAGS.train_batch_size * FLAGS.n_gpus) * FLAGS.num_train_epochs)
     num_warmup_steps = int(num_train_steps * FLAGS.warmup_proportion)
     print("TEST:steps",FLAGS.number_examples,FLAGS.train_batch_size,FLAGS.num_train_epochs)
     # if FLAGS.do_train:
