@@ -1162,10 +1162,10 @@ def test(vocab_file,bert_config_file,file_checkpoint,path_data,path_target,model
     D = [Docs[i]['content'] for i in range(len(Docs))]
     Q = [Queries[i]['content'] for i in range(len(Queries))]
     vec_doc = sentEmb(D,mode='dc',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
-    vec_qr = sentEmb(Q,mode='qr',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
+    vec_qr = sentEmb(Q[:maxSample],mode='qr',batch_size=32,vocab_file = vocab_file,bert_config_file = bert_config_file,max_seq_length=max_seq_length,file_checkpoint=file_checkpoint,initial_checkpoint=initial_checkpoint)
     R = []
     for i in range(maxSample):
-        s = vec_qr.dot(vec_qr[i])
+        s = vec_doc.dot(vec_qr[i])
         idx = np.argsort(-s)
         rec = [D[j]+'\t%0.4f'%s[j] for j in idx[:maxRecall] if s[j]>=minSim]
         d = Queries[i]
